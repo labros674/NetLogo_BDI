@@ -1,0 +1,332 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; RoboLogo
+;;; A recreation of the robocode game in NetLogo
+;;; v0.8 2017
+;;; Ilias Sakellariou, Spyridon Krantas
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Tank Related Code.
+;;; Tank Actions
+
+;;; Tank Breed and  Variables
+breed [tanks tank]
+tanks-own [energy name my-gun my-radar my-team motion-unlocked-gun motion-unlocked-radar tank-behaviour set-up-tank scan score 
+       current-max-rotation current-max-move current-max-gun-rotation
+       last-action-ticks 
+       user-defined
+       beliefs desire intention]
+
+breed [guns agun]
+guns-own [gunHeat my-tank moving?]
+
+to setupTank
+  set size 2
+  set energy 100
+  ;;; Creating the Gun
+  hatch-guns 1
+    [
+      set size 1.8
+      fd 0.1
+      set color red
+      set gunHeat 0 
+
+      create-link-from myself [ tie hide-link ]
+      set my-tank myself
+    ]
+  hatch-radars 1
+    [
+     set size 1.1
+     set color magenta
+     create-link-from myself [ tie hide-link ]
+     set my-tank myself
+     set moving? true
+    ]
+  
+  set my-gun one-of guns with [in-link-neighbor? myself]
+  set my-radar one-of radars with [in-link-neighbor? myself]
+  set motion-unlocked-gun false
+  set motion-unlocked-radar false
+  set user-defined table:make 
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Tank Cycle
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; This is the main cycle of the tank.
+;;; First it asks the radar to scan the area
+;;; Then it executes the code defined by the user.
+to tank-cycle
+  ask my-radar [radar-behaviour]
+  ;;; Each tank runs its own code.
+  run tank-behaviour
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Tank Actions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; These are NOT to be changed by the user.
+;;; They incorporate various constraints of the environment.
+
+;;; Turning the gun.
+;;; Any turn of the gun cannot exceed the gun_max_rotation limit.
+to turn-gun-left [angle]
+  if current-max-gun-rotation <= 0 [stop]
+  let effective-angle  min (list current-max-gun-rotation angle)
+  decrease-limit-gun-rotation effective-angle
+  ask my-gun [lt effective-angle]
+  tank-action-done
+end
+
+to turn-gun-right [angle]
+  if current-max-gun-rotation <= 0 [stop]
+  let effective-angle  min (list current-max-gun-rotation angle)
+  decrease-limit-gun-rotation effective-angle
+  ask my-gun [rt effective-angle]
+  tank-action-done
+end
+
+;;; Another action that works better with subtract-headings.
+to turn-gun-relative-heading [angle]
+  if current-max-gun-rotation <= 0 [stop]
+  let effective-angle  min (list current-max-gun-rotation angle)
+  decrease-limit-gun-rotation effective-angle
+  ask my-gun [rt effective-angle]
+  tank-action-done
+end
+
+;;; Lock/unlock gun/radar when turning
+to lock-gun-motion
+  set motion-unlocked-gun false
+end 
+
+to unlock-gun-motion
+  set motion-unlocked-gun true
+end 
+
+to lock-radar-motion
+  set motion-unlocked-radar false
+end 
+
+to unlock-radar-motion
+  set motion-unlocked-radar true
+end 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Moving the tank.
+;;; There are several limitations
+;;; A) The speed, regardless what the user states cannot pass a certain speed limit.
+;;; B) Cannot move beyond the edge.
+;;; We assume that the tank-speed in the distance the user wants the tank to travel in each time step.
+;;; This is limited by the max tank speed and the existence of other tanks.
+;;; Collision detection is here and tanks crash.
+;;; The technique is simple: Make very small moves and then check at each cycle the constraints.
+to tank-move [tank-speed]
+  ;;; NO MORE MOVING IN THIS CYCLE
+  if current-max-move <= 0 [stop]
+  tank-action-done
+  ;;; Whatever speed the user asks, the limit will be the speed limit
+  set tank-speed min (list tank-speed current-max-move)
+  decrease-limit-move tank-speed
+  while [tank-speed >= 0]
+    [
+       ;;;Tank crashes another tank
+       if any? other tanks in-cone 1.5 180
+         [ask (turtle-set self other tanks in-cone 1.5 180)  [tank-crash-tank]  stop ]
+       ;;;Tank crashes the wall
+       if crashed-to-edge? [tank-crash-wall hatch-hits 1 []  rt random-float 120 stop]
+       if not can-move? 0.1 [set heading random 180]
+       fd 0.1
+       set tank-speed tank-speed - 0.1
+    ]
+  if ramming? [set score score + 2]
+end
+
+;;; Should be able to turn the tank
+to tank-turn-rt [angle]
+  tank-action-done 
+  if current-max-rotation <= 0 [stop] 
+  let effective-angle min (list angle robot_max_rotation)
+  decrease-limit-rotation effective-angle
+  rt effective-angle
+  if motion-unlocked-gun [turn-gun-left effective-angle]
+  if motion-unlocked-radar [turn-radar-left effective-angle]
+end
+
+to tank-turn-lt [angle] 
+  tank-action-done
+  if current-max-rotation <= 0 [stop] 
+  let effective-angle min (list angle robot_max_rotation)
+  decrease-limit-rotation effective-angle
+  lt effective-angle
+  if motion-unlocked-gun [turn-gun-right effective-angle]
+  if motion-unlocked-radar [turn-radar-right effective-angle]
+end
+
+
+;;; This is the firing mechanism
+;;; Carefull. This is called by the tank!
+;;; .. that then asks the gun to do the job.
+;;; Fire needs a parameter bullet-power. This is defined by the tank that fires.
+
+to fire [fire-bullet-power]
+  ask my-gun [gun-fire fire-bullet-power]
+  tank-action-done
+   
+end
+
+
+;;; This is the gun firing a shot.
+;;; i.e. Hatching the bullet, etc.
+;;; Gun fires if there is enough energy.
+to gun-fire [fire-bullet-power]
+  if gunHeat > 0 [stop]
+  ; hatch the bullet
+  hatch-bullets 1 [
+         set owner [my-tank] of myself
+         set size 0.6
+         set velocity ((20 - (3 * fire-bullet-power)) / 180)  ;; since this executes 10 times in a cycle the velocity is / 10
+         set bullet-power fire-bullet-power
+         ;;Energy spent on firing
+         ask owner [set energy energy - game-bullet-power] 
+         fd 0.1 
+     ]
+  
+  ; inc the heat
+  set gunHeat (1 + (fire-bullet-power / 5))
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Some Reporters (syntactic sugar)
+to-report my-gun-heading
+  report [heading] of my-gun
+end
+
+;;; Am I close to an edge?
+to-report close-to-edge?
+  report any? patches in-cone 2.5 180 with [pcolor = red]
+end
+
+;;; Am I close to an edge?
+to-report crashed-to-edge?
+  report any? patches in-radius 1.2 with [pcolor = red]
+end
+
+;;; Is there another tank ahead? (to avoid collisions)
+to-report tank-ahead?
+  report any? other tanks in-cone 2 180 
+end
+
+;;; Detect if there are any tanks close to me.
+to-report tanks-close?
+  report any? other tanks in-radius 2
+end
+
+;;; Is there another team-tank close? 
+to-report team-tank-close?
+  report any? other tanks with [breed = tanks and my-team = [ my-team ] of myself] in-radius 2
+end
+
+to-report ramming?
+  report any? other tanks in-cone 1.5 180
+end
+
+
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; General Operations Related to Tanks.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; What happens if the tank is hit.
+;;; The hit is wrt the bullet power that hit it. So, tank-hit needs an argument
+to tank-hit [hit-bullet-damage]
+  energy-reduce  hit-bullet-damage
+end
+
+
+;;; What happens when the tank successfully hits the enemy. 
+;;; In this case THE bullet that hit the enemy tank calls this procedure on its OWNER.
+to hit-success [hit-score]
+    set score score + hit-score
+    set energy energy + (3 * game-bullet-power)
+end 
+
+
+;;; Tank crash1
+;;; Here we are going to place the reduction due to crash with other tanks
+to tank-crash-tank
+  energy-reduce 0.6
+  hatch-hits 1 []
+end
+
+;;; Tank crash2
+;;; Here we are going to place the reduction due to crash with the wall
+to tank-crash-wall
+  energy-reduce (abs speed * 0.5) - 1
+end
+
+
+;;; Energy-reduce that checks that the tank can still operate
+to energy-reduce [value-update]
+  set energy energy - value-update
+  if energy <= 0 [ 
+    tank-die
+  ]
+end
+
+;;; We might want to do something else as well here.
+;;; So increase and descrease will be procedures.
+to increase-tank-score [sc-update]
+   set score score + sc-update
+   ;;; now that we belong to a team, let us update the team score
+   table:put scoring my-team sc-update + table:get scoring my-team
+end
+
+to reduce-tank-score [sc-update]
+  set score score - sc-update
+  table:put scoring my-team table:get scoring my-team - sc-update 
+end
+
+
+;;; The tank dies.
+;;; Before it does it has to make sure that its components are dead as well.
+;;; The gun and the radar die.
+to tank-die
+  ask my-gun [die]
+  ask my-radar [die]
+  ;; visualization
+  hatch-explosions 1 []
+  ;; this records the death in a cycle and updates the rewards of all remaining 
+  ;; tanks 
+  record-death
+  die
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Recording last action 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+to tank-action-done
+  set last-action-ticks ticks
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Checking limits
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+to decrease-limit-move [current-speed]
+  set current-max-move current-max-move - current-speed 
+end
+
+to decrease-limit-rotation [angle]
+  set current-max-rotation current-max-rotation - angle 
+end
+
+to decrease-limit-gun-rotation [angle]
+ set current-max-gun-rotation current-max-gun-rotation - angle
+end
+
+
+
+
+
+

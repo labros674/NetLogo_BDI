@@ -1,0 +1,68 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; RoboLogo
+;;; A recreation of the robocode game in NetLogo
+;;; v0.8 2017
+;;; Ilias Sakellariou, Spyridon Krantas
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Bullets related code
+
+;;; Bullet Breed and Variables
+breed [bullets bullet]
+bullets-own [owner velocity bullet-power]
+
+to bullet-behaviour 
+     
+  ;; Bullets that reach the end die
+  if not can-move? edgeWidth [die]
+    
+  fd velocity
+  ;; Scaning for targets other than owner.
+  ;; The bullet must die after hitting the tank.
+  if any? bullet-targets [
+    ; this is the target
+    let found-target min-one-of bullet-targets [distance myself]
+    let found-target-team [my-team] of found-target
+    ; this is the damage to cause
+    let target-damage inflicted-bullet-damage
+    ; hit it
+    ask found-target  [tank-hit target-damage]
+    hatch-hits 1 []
+    ;; UPDATE the score of my OWNER by one
+    ;; Check first that the owner IS still alive
+    
+    if (is-agent? owner and [my-team] of owner != found-target-team)
+     [ 
+       ; You hit it!                                                                         
+       ask owner [hit-success 1]
+       ; is the target-dead?
+       if (not is-agent? found-target) 
+        [ask owner [increase-tank-score (0.2 * target-damage)]  ]
+     ]
+    
+    die ;; Now the bullet dies.
+    ]
+
+  ;; Bullets collision
+  if any? other bullets in-radius 0.2 [
+     ask (turtle-set self other bullets in-radius 0.2)  [ hatch-hits 1 [] die]
+  ]  
+end
+
+
+;;; Bullet scanner
+to-report bullet-targets
+  report tanks in-radius 0.8 with [not (self = [owner] of myself) ]
+end
+
+;;; Computes the damamge that the bullet causes when hits another tank
+to-report inflicted-bullet-damage
+  ifelse (bullet-power > 1.0) 
+  [report ((4 * bullet-power) + (2 * (bullet-power - 1)))]
+  [report 4 * bullet-power]
+end
+
+;;;Incoming bullets
+to-report any-incoming-bullets?
+  report any? bullets in-radius 1.5
+end

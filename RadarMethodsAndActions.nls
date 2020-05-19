@@ -1,0 +1,92 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; RoboLogo
+;;; A recreation of the robocode game in NetLogo
+;;; v0.8 2017
+;;; Ilias Sakellariou, Spyridon Krantas
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Radar Related Code
+
+;;; Radar Breed and  Variables
+breed [radars radar]
+radars-own [my-tank moving? scan rd-rotation]
+
+to radar-behaviour
+  ifelse moving?
+     [rt rd-rotation (radar-scan radar_max_rotation) ]
+     [(radar-scan radar_max_rotation)]
+end
+
+;;; Radar scans and sends everything to the scan var of the tank.
+to radar-scan [rd-angle]
+  set scan tanks with [self != [my-tank] of myself] in-cone radar_max_range rd-angle
+  ;;; Copy (could be changed)
+  ask my-tank [set scan ([scan] of myself)]
+end
+
+;;; Tank related commands to the radar
+to radar-start
+  ask my-radar [set moving? true]
+end
+
+to radar-stop
+  ask my-radar [set moving? false]
+end
+
+to turn-radar-left [angle]
+  ask my-radar [lt angle]
+end
+
+to turn-radar-right [angle]
+  ask my-radar [rt angle]
+end
+
+to radar-rotation [angle]
+  ask my-radar [set rd-rotation (min (list angle  radar_max_rotation))]
+end
+
+
+;;; Obtaining the results of a scan
+;;; Called by the TANK!
+;;; The teams are important now. This can be better
+to-report any-enemy-tanks?
+  report any? scan with [breed = tanks and my-team != [ my-team ] of myself]                                  
+end 
+
+;;; Reports the closest enemy tank
+to-report closest-enemy-tank
+  report min-one-of scan  with [breed = tanks and my-team  != [ my-team  ] of myself] [distance myself]
+end
+
+;;; Lets make this better 
+;;; Reports the heading of the closest tank 
+to-report heading-closest-tank 
+  report first heading-distance-closest-tank
+end
+
+;;; Reports the distance of the closest tank 
+to-report distance-closest-tank 
+  report item 1 heading-distance-closest-tank
+end
+
+;;; Selects a tank from the scanned that is closest and reports its relative heading
+;;; and distance towards the tank.
+to-report heading-distance-closest-tank
+  let trgt closest-enemy-tank
+  report (list towards closest-enemy-tank distance-nowrap closest-enemy-tank)
+end
+
+to-report scanned-enemies 
+  report scan with [breed = tanks and my-team != [ my-team ] of myself]  
+end
+
+
+to-report tank-at-heading? [head]
+  ;;report not empty? (filter [ [?x] -> towards ?x = head] ([heading] of scanned-enemies))
+  report any? scanned-enemies with [ ((head - 15) <= ([towards myself] of myself)) and (([towards myself] of myself) <= (head + 15)) ]
+end
+
+to-report in-range-a [gun-angle tank-angle limit]
+  report (gun-angle - limit) <= tank-angle 
+          and tank-angle <= (gun-angle + limit) 
+end

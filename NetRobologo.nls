@@ -1,0 +1,283 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; RoboLogo
+;;; A recreation of the robocode game in NetLogo
+;;; v0.85 2017
+;;; Ilias Sakellariou, Spyridon Krantas
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; MAIN File for the game Environment.
+;;; It includes all the seperate files.
+
+
+__includes["TankMethodsAndActions.nls" "RadarMethodsAndActions.nls" "BulletMethodsAndActions.nls" ]
+
+;; visualization entities
+breed [hits hit]
+breed [explosions explosion]
+
+extensions [table]
+
+globals [
+
+
+  ;;Team variables
+  teams
+  scoring
+  num-teams
+
+  ;;Robot globals
+  robot_max_speed
+  robot_acceleration
+  robot_deceleration
+  robot_max_rotation
+
+  ;;Radar globals
+  radar_max_range
+  radar_max_rotation
+  radar_angle
+
+  ;;Bullet globals
+  bullet_min
+  bullet_max
+
+
+  ;;Gun globals
+  gun_max_rotation
+  cooling_rate
+
+  ;; Inactive Penalty times
+  inactive-penalty-time
+  inactive-penalty-energy-reduction
+
+  ;; Scoring
+  deaths-in-cycle
+  ]
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Setup Procedures ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+to setup-netrobologo
+  clear-all
+  reset-ticks
+
+  ;;Set the shapes
+  set-default-shape tanks "tank"
+  set-default-shape bullets "rocket"
+  set-default-shape guns "cannon"
+  set-default-shape radars "radar"
+  set-default-shape hits "hit-shape"
+  set-default-shape explosions "explosion-shape2"
+
+
+  ;;Set the arena
+  draw-the-map
+
+
+  ;;;Set the Globals (Cannot be changed)
+  ;;;Each patch in the arena is 18 pixel
+  set num-teams 2
+  set robot_max_speed 0.5        ;;; ~8 pixels
+  set robot_acceleration 0.05    ;;; ~1 pixel
+  set robot_deceleration 0.1     ;;; ~2 pixels
+
+  set robot_max_rotation  10 ;;;10 - (0.75 * abs speed)
+  
+  ;; Radar related limits
+  set radar_max_range 20     ;; too much this one 66.666667   ;;; 1200 pixels
+  set radar_max_rotation 45  ;; max rotation and radar angle is the same
+  
+  
+  ;; Bullet power related limits
+  set bullet_min 0.1
+  set bullet_max 3.0
+
+  set gun_max_rotation 20
+  set cooling_rate 0.1
+  
+  ;; inactive time and penalty
+  set inactive-penalty-time 450
+  set inactive-penalty-energy-reduction 0.1
+
+  set deaths-in-cycle 0
+
+
+  create-tanks ((floor (num-tanks / num-teams))  *  num-teams)
+  [
+    setUpTank
+    move-to one-of patches with 
+      [  pcolor = black 
+         and distance min-one-of patches with [pcolor = red] [distance myself] > 1.5
+         and not any? other tanks-here]                                                                                                       
+  ]
+  setup-teams
+  ;;; Run setup actions.
+  ask tanks [run set-up-tank]
+end
+
+
+;;; Create the arena. IS: Now the arena is custom sized.
+to draw-the-map
+   ask patches with [ pycor < min-pycor + edgeWidth]
+   [set pcolor red]
+   ask patches with [ pxcor < min-pxcor + edgeWidth]
+   [set pcolor red]
+   ask patches with [ pycor > max-pycor - edgeWidth]
+   [set pcolor red]
+   ask patches with [ pxcor > max-pxcor - edgeWidth]
+   [set pcolor red]
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RunTime Procedures ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to run-game
+
+  ifelse(robologo-stop) [
+    reset-deaths
+    ;;; Bullets have priority and perform actions many times in a cycle.
+    game-update-cycle
+    ask tanks 
+    [ifelse energy <= 0 
+    [set label "DISABLED" stop]
+     [tank-cycle]
+    ]
+    update-deaths
+    wait wait-for
+    tick
+   ]
+  
+  ;; End of the game
+  [
+
+    ask tanks [increase-tank-score (10 * deaths-in-cycle)]
+    show-scoring
+    user-message (word "The team that won is  " game-winner)
+    ifelse user-yes-or-no? "Do you want to play again?"
+      [setup-netrobologo]
+      [stop]
+  ]
+
+end
+
+;;; Environment operations
+to game-update-cycle
+  repeat 10 [ask bullets [bullet-behaviour]]
+  ;;; visualization
+  ask hits [hits-update]
+  ask explosions [explosion-update]
+  ;;; Cool down the guns 
+  ask guns [set gunHeat gunHeat - cooling_rate]
+  ;;; Punishment for tank-inactivity
+  ;;; last-action-ticks is when the last action was performed.
+ 
+  ask tanks with [(ticks - last-action-ticks) > inactive-penalty-time]
+        [
+          energy-reduce inactive-penalty-energy-reduction
+        ]
+  ;;; New limits for the new cycle (Fairness)
+  ask tanks [ 
+    set current-max-move robot_max_speed
+    set current-max-rotation robot_max_rotation
+    set current-max-gun-rotation gun_max_rotation
+  ] 
+end
+
+;;; This includes the end of game detection coditions.
+;;; If there is one or less teams with any? agents stop
+to-report robologo-stop
+  report (length filter any? map [[?x] ->  item 1 ?x ] table:to-list teams) > 1
+end
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Team management and scoring
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; There are two tables that handle teams
+;;; One stores agent teams
+;;; Scoring stores the scoring of each team.
+to setup-teams
+ set teams table:make
+ set scoring table:make
+
+ ;; findout how many agents in a team
+ let team-size  floor (num-tanks / num-teams)
+ let allc base-colors
+ let teamcounter 1
+ repeat num-teams [
+    let teamname (word "team" teamcounter)
+    let the-team n-of team-size tanks with [my-team = 0]
+    ask the-team
+        [set color first allc
+         set my-team teamname]
+    ;;; record the team members
+    table:put teams teamname the-team
+    ;;; set the scoring of the team to 0
+    table:put scoring teamname 0
+
+    ;; next color
+    set allc but-first allc
+    set teamcounter teamcounter + 1
+  ]
+  ;;; Assign to each tank its behaviour and setup
+  ask tanks [set tank-behaviour runresult (word "[[] -> tank-behaviour-" my-team  "]")]
+  ask tanks [set set-up-tank runresult (word "[[] -> setup-tank-" my-team  "]")]
+end
+
+
+
+;;; Tanks in my team
+to-report my-team-members
+  report table:get teams my-team
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; SCORING
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Records a death
+to record-death
+  set deaths-in-cycle deaths-in-cycle + 1
+end
+
+;;; Called at the end of a cycle to update the score of everybody alive
+to update-deaths
+  ;; Debug if (deaths-in-cycle > 0) [show deaths-in-cycle]
+  ask tanks [increase-tank-score deaths-in-cycle * 50]
+end
+
+to reset-deaths
+ set deaths-in-cycle 0
+end
+
+
+;; Reports the Game Winner
+to-report game-winner
+  report reduce [[?x ?y] -> ifelse-value ((item 1 ?x) > (item 1 ?y)) [?x] [?y] ] table:to-list scoring
+end
+
+to show-scoring
+  foreach table:to-list scoring
+      [ [?x] -> output-print (word  (first ?x)  " ::: "  (item 1 ?x))]
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Visualization
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to hits-update
+  set color red
+  set size size + 0.5
+  if size > 3 [die]
+end
+
+
+to explosion-update
+  set color one-of [red blue orange]
+  set size size + 0.01
+  if size > 3 [die]
+end
