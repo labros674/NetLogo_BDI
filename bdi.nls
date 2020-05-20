@@ -1,0 +1,331 @@
+;;; File to be included in NetLogo Mutliagent Models
+;;; BDI Architecture for NetLogo Models
+;;; Includes belief revision procedures and Intentions Handling and Execution.
+;;; Original Version for Netlogo 2 (2005) I. Sakellariou
+;;; Adapted to NetLogo 4 (2008) I. Sakellariou
+;;; Adapted to NetLogo 5 (2012) I. Sakellariou
+;;; Extended (2013) I. Sakellariou
+;;; Ported to NetLogo v6 (2017) i. Sakellariou
+
+;;; Requirements
+;;; 1) All agents that modeled as "BDI" agent have two declared -own variables beliefs intentions.
+;;; These are the variables to which all beliefs and intentions are recorded. So, in your model if there is a breed of turtles
+;;; which you desire to model as BDI, then you should have a BREED-own [beliefs intentions] declaration (along with any other
+;;; variables that you wish to include in your model.
+;;; MAKE SURE that when you create the variables you set their initial values to empty list ([]).
+;;; 2) YOU also must have ticks!! in your model (or timeout will not work).
+
+
+
+;;; CHANGES 2013
+;; a) local variables and procedure names prefixed with bdi-lib## (ad-hoc module system)
+;; b) remove intention corrected
+;; c) Add intention adds an intention to a temporary list and at the end
+;;    of the execution cycle, it adds all intentions to the stack. This corrects the problem of inserting intentions in the
+;;    reverse order.
+;; d) Intentions MUST have a name, else there is no way to have any kind of debugging.
+;;   So that changes the way intentions are inserted.
+;; e) Added better support for intention removal.
+;; f) Intentions are timestamped WHEN scheduled for execution. Thus, intentions now can have a more semantically concrete  timeout.
+;; g) Added remove-intention-des to remove an intention by description.
+
+extensions [table]
+
+;;; Debugging
+globals [bdi-lib##debug-mode]
+
+
+;;; Debugging
+
+to set-bdi-debug-mode [bdi-lib##mode]
+  set bdi-lib##debug-mode bdi-lib##mode
+end
+
+;;; Reporter for diplaying debug mode on screen.
+to-report bdi-lib##DEBUG
+  ifelse bdi-lib##debug-mode > 0 [report "Debug ON"]
+  [report "Debug OFF"]
+end
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;; BELIEFS
+;; There is nothing magical about beliefs: they are simply items
+;; of a specific list. Check list processing in NetLogo. However
+;; here are some usefull procedures.
+
+;;; creates a new belief. (does not stores it in belief memory).
+to-report create-belief [bdi-lib##b-type bdi-lib##content]
+  report (list bdi-lib##b-type bdi-lib##content)
+end
+
+;;; reports type of a belief.
+to-report belief-type [bdi-lib##bel]
+  report first bdi-lib##bel
+end
+
+;; reports the coontent of belief belief
+to-report belief-content [bdi-lib##bel]
+  report item 1 bdi-lib##bel
+end
+
+
+;; Adding information to the beliefs structure
+to add-belief [bdi-lib##bel]
+  if member? bdi-lib##bel beliefs [stop]
+  set beliefs fput bdi-lib##bel beliefs
+end
+
+;; Removing one belief (The first) from the list of beliefs.
+to remove-belief [bdi-lib##bel]
+ set beliefs remove-item (position bdi-lib##bel beliefs) beliefs
+end
+
+;;; return true if a specific belief belong to the set of beliefs
+to-report exists-belief [bdi-lib##bel]
+   ;;report table:has-key? beliefs bdi-lib##bel
+   report member? bdi-lib##bel beliefs
+end
+
+;;; Reports true if a belief in the form of ["b-type" etc etc etc ...] exist in beliefs list
+to-report exist-beliefs-of-type [bdi-lib##b-type]
+  let bdi-lib##blfs filter [[?x] -> first ?x = bdi-lib##b-type] beliefs
+  report empty? bdi-lib##blfs
+end
+
+;;; Returns all beliefs of b-type in a list
+to-report beliefs-of-type [bdi-lib##b-type]
+  report filter [[?x] -> first ?x = bdi-lib##b-type] beliefs
+end
+
+;;; Returns the first belief of a certain type and removes it
+to-report get-belief [bdi-lib##b-type]
+  ifelse exist-beliefs-of-type bdi-lib##b-type
+  [let bdi-lib##bel first filter [[?x] -> first ?x = bdi-lib##b-type] beliefs
+   remove-belief bdi-lib##bel
+   report bdi-lib##bel
+  ]
+  [report false]
+end
+
+to-report read-first-belief-of-type [bdi-lib##b-type]
+   report first beliefs-of-type bdi-lib##b-type
+end
+
+to update-belief [bdi-lib##bel]
+   remove-belief read-first-belief-of-type belief-type bdi-lib##bel
+   add-belief bdi-lib##bel
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;; CODE FOR HANDLING INTENTIONS-A simple deliberative architecture
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; Initialising variables in agents.
+to init-intentions
+   carefully
+    [set intentions table:make
+     table:put intentions "ints" []
+     table:put intentions "temps" []
+     table:put intentions "current-intention-time-stamp" 0
+      ]
+    [user-message (word "BDI LIB: Turtle " who " has no delcared variable intentions. This a requirment for the BDI library.")]
+
+   carefully
+    [set beliefs table:make ]
+    [user-message (word "BDI LIB: Turtle " who " has no declared variable beliefs. This a requirment for the BDI library.")]
+end
+
+
+to execute-intentions
+  if empty?  bdi-lib##exec-intentions [stop]
+  let myInt get-intention
+  if (intention-timestamp myInt < 0) [
+     bdi-lib##timestamp-intetion myInt
+     set myInt get-intention ;;; Needed since the intention has changed.
+     table:put intentions "current-intention-time-stamp" intention-timestamp myInt
+  ]
+  carefully [run intention-name myInt] [user-message (word "Problem in Intention " intention-description myInt)]
+  if runresult intention-done myInt [remove-intention myInt] ;; Use remove and NOT pop since the stack might be changed.
+  bdi-lib##update-intentions
+  if (bdi-lib##debug-mode > 0) [set label bid-lib#debug-ints] ;; Just for debugging.
+end
+
+
+;;; Safe display intetions, nicely.
+to-report bid-lib#debug-ints
+  ifelse not empty? display-intentions
+    [report reduce [[?x ?y] -> (word ?x " / " ?y)] display-intentions]
+     [report []]
+end
+
+
+;;; Displays intention Names in a list (debugging)
+to-report display-intentions
+  report map [[?x] -> intention-description ?x]  bdi-lib##exec-intentions
+end
+
+;;;; Intentions Structure Access Functions
+;; returns the current intention of the agent
+to-report current-intention
+  report intention-name get-intention
+end
+
+;; Reports the full intention structure
+to-report get-intention
+  report first bdi-lib##exec-intentions
+end
+
+;;; Display Name of the Intention
+to-report intention-description [bdi-lib##intention]
+  report item 0 bdi-lib##intention
+end
+
+
+;; Returns the intetnion name (the executable)
+to-report intention-name [bdi-lib##intention]
+  report item 1 bdi-lib##intention
+end
+
+
+;; return the done-methods (arguments) of the intention. If it evaluates to true
+;; then the intention is removed.
+to-report intention-done [bdi-lib##intention]
+  report item 2 bdi-lib##intention
+end
+
+;;; returns the intentions time stamp.
+to-report intention-timestamp [bdi-lib##intention]
+  report item 3 bdi-lib##intention
+end
+
+;;; Stamps an intention with its Entry Time
+to bdi-lib##timestamp-intetion [bdi-lib##intention]
+    table:put intentions "ints" replace-item
+        (position bdi-lib##intention  bdi-lib##exec-intentions)
+         bdi-lib##exec-intentions
+        (replace-item 3 get-intention ticks)
+end
+
+
+;; Removes a specific intention from the intention stack.
+;; Member is needed for safety. If for some reason the intention is not on the stack, themn it does nothing.
+to remove-intention [bdi-lib##intention]
+  if member? bdi-lib##intention  bdi-lib##exec-intentions
+  [
+    table:put intentions "ints" remove-item (position bdi-lib##intention  bdi-lib##exec-intentions) bdi-lib##exec-intentions
+  ]
+end
+
+;;; Removes an intention by description
+to remove-intention-des [bdi-lib##intention-descr]
+   if member? bdi-lib##intention-descr display-intentions
+     [
+       table:put intentions "ints" remove-item (position bdi-lib##intention-descr  display-intentions) bdi-lib##exec-intentions
+     ]
+end
+
+;; Clears all intentions on the next execution cycle
+to clear-all-intentions
+  add-intention "Clear all intentions" "init-intentions" once
+end
+
+;; Adds an intention in the intentions list. REMEMBER that intentions are
+;; stored in a STACK!
+;; The second argument is the intention name that should be some executable procedure
+;; you encode in NetLogo. The third argument should be a REPORTER that when evaluates to
+;; true the intention is removed (either accomplished or dropped).
+;; BOTH ARGUMENTS HAVE TO BE STRINGS OR TASKS (NetLogo 5.0)
+;; Each intention is added with a timestamp less than 0.
+to add-intention [bdi-lib#description bdi-lib##intname bdi-lib##done ]
+    ;;set intentions fput (lput (list bdi-lib#description bdi-lib##taskify bdi-lib##intname bdi-lib##taskify bdi-lib##done) bdi-lib##temp-intentions) bdi-lib##exec-intentions
+    table:put intentions "temps" lput (list bdi-lib#description bdi-lib##taskify bdi-lib##intname bdi-lib##taskify bdi-lib##done -1) bdi-lib##temp-intentions
+
+end
+
+to initial-intention [bdi-lib#description bdi-lib##intname bdi-lib##done]
+   add-intention bdi-lib#description bdi-lib##intname bdi-lib##done
+   bdi-lib##update-intentions
+end
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; SPECIAL ACTIONS
+;;; a null action
+to do-nothing
+end
+
+;;; wait for something until the timeout expires.
+to wait-for-timeout
+  do-nothing
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;  SPECIAL CONDITIONS
+;; Deprecated Use timeout-after
+to-report timeout_expired [bdi-lib##timeout]
+  report  [[] -> timeout-after bdi-lib##timeout]
+ ;;report task ticks +
+
+end
+
+;;; reporter that becomes false n ticks after
+;;; its first call.
+to-report timeout-after-now [bdi-lib##timeout]
+  let bdi-lib##when ticks + bdi-lib##timeout
+  report [ [] -> bdi-lib##when < ticks]
+end
+
+;;; Succeeds when the timeout is  bdi-lib##timeout ticks after first viewing the goal.
+to-report timeout-after [bdi-lib##timeout]
+  report [ [] -> ticks >= (bdi-lib##timeout - 1) + bdi-lib##get-current-intention-time-stamp]
+end
+
+
+;;; Allows "running" the intention once only (syntactic sugar)
+to-report once
+  report [ [] -> true]
+end
+
+;;; Allows "running" the intention forever (syntactic sugar)
+to-report forever
+  report [ [] -> false]
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Taskify Utility. Allows both string and task representations of intentions.
+;;; If this is a string it converts it to a task. If not i.e. is a reporter or command task
+;;; then it simply reports that.
+to-report bdi-lib##taskify [bdi-lib##what]
+  ifelse (is-anonymous-reporter? bdi-lib##what or is-anonymous-command? bdi-lib##what)
+    [report bdi-lib##what]
+    [report runresult (word "[ [] -> " bdi-lib##what " ]")]
+end
+
+;;; Updates the intention list at the end of the cycle.
+;;; and sets the temporary intentions to []
+to bdi-lib##update-intentions
+  table:put intentions "ints" (sentence bdi-lib##temp-intentions bdi-lib##exec-intentions)
+  table:put intentions "temps" []
+  ;; set intentions (list [] (sentence bdi-lib##temp-intentions bdi-lib##exec-intentions))
+end
+
+;;; reports temporary list of intentions
+to-report bdi-lib##temp-intentions
+  report table:get intentions "temps"
+end
+
+;;; Reports intentions to be executed.
+to-report bdi-lib##exec-intentions
+  report table:get intentions "ints"
+end
+
+to-report bdi-lib##get-current-intention-time-stamp
+  report table:get intentions "current-intention-time-stamp"
+end
+
+;;; INTERNAL not to be USED.
+;;; reports the end of the timeout.
+to-report bdi-lib##timeout_has_expired [bdi-lib##when]
+  report (ticks + bdi-lib##when <  bdi-lib##get-current-intention-time-stamp)
+end
