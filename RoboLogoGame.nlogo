@@ -16,9 +16,9 @@ to setup-tank-team1
   init-intentions
 
   initial-intention "Kill Enemies" "kill-enemies" forever
-  add-belief create-belief "borders" 5
-  ;add-belief create-belief "enemies" (list 0 0)
-  ;add-belief create-belief "friends" (list 0 0)
+  add-belief create-belief "borders" (list 0 0)
+  add-belief create-belief "enemies" (list 0 0)
+  add-belief create-belief "friends" (list 0 0)
   print beliefs
 end
 
