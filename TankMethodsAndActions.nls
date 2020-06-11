@@ -10,10 +10,14 @@
 
 ;;; Tank Breed and  Variables
 breed [tanks tank]
+__includes ["bdi.nls"]
+
 tanks-own [energy name my-gun my-radar my-team motion-unlocked-gun motion-unlocked-radar tank-behaviour set-up-tank scan score 
        current-max-rotation current-max-move current-max-gun-rotation
        last-action-ticks 
-       user-defined]
+       user-defined
+       beliefs intentions ;Προσθήκη μεταβλητών
+]
 
 breed [guns agun]
 guns-own [gunHeat my-tank moving?]
