@@ -5,7 +5,6 @@
 ;;; Ilias Sakellariou, Spyridon Krantas
 
 ;;;Behaviours related code
-extensions [table]
 __includes["NetRobologo.nls"]
 
 
@@ -14,37 +13,24 @@ to setup-tank-team1
   radar-rotation radar_max_rotation
   radar-start
 
-  let unpassable list 0 0
-  let enemies table:make
+  init-intentions
 
-  let beliefs table:make
-  table:put beliefs "unpassable" unpassable
-  table:put beliefs "enemies" [] ;table
-  table:put beliefs "friends" [] ;table
+  initial-intention "Kill Enemies" "kill-enemies" forever
+  add-belief create-belief "borders" 5
+  ;add-belief create-belief "enemies" (list 0 0)
+  ;add-belief create-belief "friends" (list 0 0)
+  print beliefs
+end
 
-  set user-defined table:make
-  table:put user-defined "beliefs" beliefs
-  table:put user-defined "desires" ["Destroy" "None"]
-  table:put user-defined "intentions" ["Move-Shoot" "Move-Search"]
-
-
-  print table:get user-defined []
-  print table:get beliefs []
-  print table:get user-defined "intentions"
+to kill-enemies
 end
 
 ;Beliefs: The tank's information about the environment
-;Desire: Current desire (destroy all, stop)
 ;Intention: Current intention (scan, move, shoot etc)
-
-;;;First example of tank behaviour.(FOLLOW)
-;;;The tank follows his enemy.
-
 ;; BDI example
 to tank-behaviour-team1
   set label "BDI"
  ; update-beliefs
- ; update-desires
  ; update-intentions
  ; execute-actions
 end
@@ -57,14 +43,11 @@ to update-beliefs
 
 ;sortarisma patches-red analoga me ti thesi?
 
-
-
 end
 
 
-
-
-
+;;;First example of tank behaviour.(FOLLOW)
+;;;The tank follows his enemy.
 to setup-tank-team2
   radar-rotation radar_max_rotation
   radar-start
@@ -383,6 +366,34 @@ Score
 22
 0.0
 1
+
+BUTTON
+24
+188
+153
+221
+Debug
+set-bdi-debug-mode 1
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+MONITOR
+47
+280
+166
+325
+Debug Off
+bdi-lib##DEBUG
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
