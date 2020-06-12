@@ -19,7 +19,8 @@ to setup-tank-team1
   add-belief create-belief "borders" (list 0 0)
   add-belief create-belief "enemies" (list 0 0)
   add-belief create-belief "friends" (list 0 0)
-  print beliefs
+  ;print beliefs
+
 end
 
 to kill-enemies
@@ -30,6 +31,13 @@ end
 ;; BDI example
 to tank-behaviour-team1
   set label "BDI"
+   let temp_list 0
+   let tempy 0
+  ;if any-enemy-tanks?[
+    set temp_list [list xcor ycor] of one-of turtles with [breed = tanks and my-team != [ my-team ]
+    of myself]
+  print temp_list
+
  ; update-beliefs
  ; update-intentions
  ; execute-actions
@@ -265,7 +273,7 @@ edgeWidth
 edgeWidth
 1
 10
-1.0
+8.0
 1
 1
 NIL
