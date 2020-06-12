@@ -134,7 +134,7 @@ to init-intentions
     [user-message (word "BDI LIB: Turtle " who " has no delcared variable intentions. This a requirment for the BDI library.")]
 
    carefully
-    [set beliefs table:make ]
+    [set beliefs [] ]
     [user-message (word "BDI LIB: Turtle " who " has no declared variable beliefs. This a requirment for the BDI library.")]
 end
 
