@@ -1,15 +1,16 @@
 # NetLogo_BDI
 
-Implementation of robo code bots suing ths Behav De Intenti algorithm in net log.
+Implementation of the Robocode game using the Behaviour Design & Intentions (BDI) algorithm in NetLogo.
 
-{what is this repo purpose.}
-{what is the main features of your implemntation}
-{what can this project do}
+This repository illustrates a BDI agent design for the popular Robocode game using NetLogo. 
+
+This implementations features a few simple AI bots and an early version of a BDI agent bot. 
 
 # How to use
 
-## installation instatuvtions
+## installation instructions
+Download NetLogo https://ccl.northwestern.edu/netlogo/6.2.2/
 
-## run instauctions
+## run instructions
 
-Example on how to run
+https://user-images.githubusercontent.com/12844399/159554180-7adbce4a-b329-4092-9eeb-35e423fb929f.mp4
